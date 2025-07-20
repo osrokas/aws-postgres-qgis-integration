@@ -1,5 +1,6 @@
-"""Setup script for creating and listing S3 buckets."""
+"""Setup script for creating AWS services including S3 bucket, Lambda function, and IAM role."""
 
+from importlib.resources import files
 import os
 import time
 import argparse
@@ -8,11 +9,11 @@ from tqdm import tqdm
 
 from src.decorators import load_env
 from src.utils import create_random_string
-from src.aws.storage import S3, CloudWatch, IAM, Lambda
+from src.aws.storage import S3, IAM, Lambda
 
 
 @load_env
-def main(bucket_name: str, log_group_name: str, log_stream_name: str, function_name: str, role_name: str) -> None:
+def main(bucket_name: str, function_name: str, role_name: str) -> None:
     """
     Description
     ----------
@@ -21,7 +22,10 @@ def main(bucket_name: str, log_group_name: str, log_stream_name: str, function_n
     Parameters
     ----------
     :param bucket_name: Name of the S3 bucket to create.
+    :param function_name: Name of the Lambda function to create.
+    :param role_name: Name of the IAM role for the Lambda function.
     """
+    # Define the current working directory
     current_path = os.getcwd()
 
     # Example usage of the S3 class
@@ -30,6 +34,7 @@ def main(bucket_name: str, log_group_name: str, log_stream_name: str, function_n
     AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
     AWS_REGION = os.getenv("AWS_REGION")
 
+    # Initialize S3 client
     s3_client = S3(
         endpoint_url=ENDPOINT_URL,
         aws_access_key_id=AWS_ACCESS_KEY_ID,
@@ -45,20 +50,7 @@ def main(bucket_name: str, log_group_name: str, log_stream_name: str, function_n
     buckets = s3_client.list_buckets()
     print("Buckets:", buckets)
 
-    # Create a log group and stream
-    logs_client = CloudWatch(
-        endpoint_url=ENDPOINT_URL,
-        aws_access_key_id=AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-        region_name=AWS_REGION,
-    )
-
-    logs_client.create_log_group(log_group_name)
-    print(f"Log group '{log_group_name}' created successfully.")
-
-    logs_client.create_log_stream(log_group_name, log_stream_name)
-    print(f"Log stream '{log_stream_name}' created successfully.")
-
+    # Define the trust policy for the IAM role
     trust_policy = {
         "Version": "2012-10-17",
         "Statement": [
@@ -66,35 +58,60 @@ def main(bucket_name: str, log_group_name: str, log_stream_name: str, function_n
         ],
     }
 
+    # Initialize IAM
     iam_client = IAM()
 
+    # Create the IAM role
     role_arn = iam_client.create_role(role_name, trust_policy)
+
+    # Wait for the role to be created
     time.sleep(5)
+
+    # Initialize Lambda client
     lambda_client = Lambda()
+
+    # Create the Lambda function
     lambda_arn = lambda_client.create_function(
         function_name=function_name,
         role_arn=role_arn,
         lambda_path=os.path.join(current_path, "src", "aws", "lambdas", "lambda_function.py"),
     )
 
-    time.sleep(5)  # Wait for the Lambda function to be created
+    # Wait for the Lambda function to be created
+    time.sleep(5)
 
+    # Add permission for S3 to invoke the Lambda function
     lambda_client.add_permission(
         function_name=function_name, statement_id="s3-trigger-permission", bucket_name=bucket_name
     )
+
+    # Wait for the permission to be added
     time.sleep(5)
+
+    # Invoke the Lambda function to ensure it is set up correctly
     s3_client.lambda_invoke(bucket_name=bucket_name, lambda_arn=lambda_arn)
+
     # Create a path gpx path
     gpx_path = os.path.join(current_path, "data", "route_framed_synced.gpx")
 
-    print("Waiting for 50 seconds...")
-    time.sleep(50)
-    # Create a random string with 10 characters
-    for _ in tqdm(range(10), desc="Uploading GPX files to S3", total=10):
+    # Wait for 20 seconds to ensure the Lambda function is ready
+    print("Waiting for 20 seconds...")
+    time.sleep(20)
+
+    # Define the number of files to upload
+    files_count = range(120)
+    print(files_count)
+    # Simulate uploading multiple GPX files to S3
+    for _ in tqdm(files_count, desc="Uploading GPX files to S3", total=len(files_count)):
+
+        # Create a random string for the file name
         random_string = create_random_string(10)
-        upload_gpx_path = os.path.join(random_string, f"route_framed_synced_{random_string}.gpx")
+
+        # Upload the GPX file to S3
+        upload_gpx_path = os.path.join(random_string, f"route_framed_synced.gpx")
+
+        # Upload the file to the S3 bucket
         s3_client.upload_file(gpx_path, bucket_name, upload_gpx_path)
-        time.sleep(2)
 
 
 if __name__ == "__main__":
@@ -104,18 +121,6 @@ if __name__ == "__main__":
         type=str,
         default="gpx-bucket-aws-test",
         help="Name of the S3 bucket to create.",
-    )
-    parser.add_argument(
-        "--log_group_name",
-        type=str,
-        default="gpx-log-group",
-        help="Name of the CloudWatch log group.",
-    )
-    parser.add_argument(
-        "--log_stream_name",
-        type=str,
-        default="gpx-log-stream",
-        help="Name of the CloudWatch log stream.",
     )
     parser.add_argument(
         "--function_name",
@@ -133,8 +138,6 @@ if __name__ == "__main__":
 
     main(
         bucket_name=args.bucket_name,
-        log_group_name=args.log_group_name,
-        log_stream_name=args.log_stream_name,
         function_name=args.function_name,
         role_name=args.role_name,
     )

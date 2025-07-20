@@ -150,6 +150,20 @@ class S3(AWS):
             },
         )
 
+    def download_file(self, bucket_name: str, object_name: str, download_path: str) -> None:
+        """
+        Description:
+        ------------
+        Download a file from an S3 bucket.
+
+        Parameters:
+        -----------
+        :param bucket_name: Name of the bucket to download from.
+        :param object_name: S3 object name to download.
+        :param download_path: Path to save the downloaded file.
+        """
+        self.client.download_file(bucket_name, object_name, download_path)
+
 
 class CloudWatch(AWS):
     def __init__(self, service_name="logs", **kwargs):
@@ -183,12 +197,15 @@ class CloudWatch(AWS):
         --------
         :return: List of log streams.
         """
+
         streams = self.client.describe_log_streams(
             logGroupName=log_group_name, orderBy="LastEventTime", descending=True
         )
         return streams["logStreams"]
 
-    def get_log_events(self, log_group_name: str, log_stream_name: str) -> None:
+    def get_log_events(
+        self, log_group_name: str, log_stream_name: str, latest: bool = False, events_count: int = 10
+    ) -> list:
         """
         Description:
         ------------
@@ -199,9 +216,36 @@ class CloudWatch(AWS):
         :param log_group_name: Name of the log group to retrieve logs from.
         :param log_stream_name: Name of the log stream to retrieve logs from.
         """
-        response = self.client.get_log_events(logGroupName=log_group_name, logStreamName=log_stream_name)
-        for event in response["events"]:
-            print(event["message"])
+        # Multiply events_count by 4 to ensure we get enough events
+        events_count *= 4
+
+        # Get response from CloudWatch logs
+        response = self.client.get_log_events(logGroupName=log_group_name, startFromHead=latest, limit=events_count)
+
+        # Get events from the response
+        events = response.get("events", [])
+        if not events:
+            print(f"No log events found in stream {log_stream_name} of group {log_group_name}.")
+            return []
+
+        gps_files = []
+
+        for event in events:
+            event_message = event.get("message", "")
+            if not event_message:
+                continue
+            if "route_framed_synced.gpx" in event_message:
+
+                json_data = json.loads(event_message)
+                records = json_data.get("Records", [])
+                for record in records:
+                    s3_bucket = record["s3"]["bucket"]["name"]
+                    s3_key = record["s3"]["object"]["key"]
+                    s3_key = s3_key.replace("%5C", "\\")
+                    event_timestamp = record["eventTime"]
+                    gps_files.append(({"bucket": s3_bucket, "filename": s3_key, "event_timestamp": event_timestamp}))
+
+        return gps_files
 
     def create_log_stream(self, log_group_name: str, log_stream_name: str) -> None:
         """
