@@ -3,11 +3,15 @@ version: '3.1'
 services: 
 
   localstack:
+    container_name: aws-localstack
     image: localstack/localstack:latest
-    environment: 
+    environment:
+      - LAMBDA_EXECUTOR=local
+      - DOCKER_HOST=unix:///var/run/docker.sock
       - AWS_DEFAULT_REGION=us-east-1
+      - DEBUG=1
       - EDGE_PORT=4566
-      - SERVICES=s3,logs,lambda,iam
+      - SERVICES=s3,logs,lambda,iam,cloudwatch
       - LOCALSTACK_TMP_DIR=/tmp/localstack-custom
     ports: 
       - '4566-4583:4566-4583'

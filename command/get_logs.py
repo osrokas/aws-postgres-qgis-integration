@@ -1,10 +1,11 @@
 from src.aws.storage import CloudWatch
 import os
 from src.decorators import load_env
+import boto3
 
 
 @load_env
-def main(log_group_name: str = "gpx-log-group-test2", log_stream_name: str = "gpx-log-stream-test2") -> None:
+def main(log_group_name: str = "/aws/lambda/gpx_lambda_function") -> None:
     """
     Description
     ----------
@@ -27,12 +28,17 @@ def main(log_group_name: str = "gpx-log-group-test2", log_stream_name: str = "gp
         region_name=AWS_REGION,
     )
 
-    #     Log group my-log-group1 created successfully.
-    # Log group 'my-log-group1' created successfully.
-    # Log stream my-log-stream2 created in group my-log-group1.
-    # Log stream 'my-log-stream2' created successfully.
+    log_streams = logs_client.get_log_streams(log_group_name)
+    print("Log Streams:", log_streams)
 
-    logs_client.get_all_log_groups(log_group_name, log_stream_name)
+    if not log_streams:
+        print("No log streams found.")
+        return
+
+    # Get the first log stream name
+    stream_name = log_streams[0]["logStreamName"]
+
+    logs_client.get_log_events(log_group_name, stream_name)
 
 
 if __name__ == "__main__":

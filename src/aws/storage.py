@@ -1,10 +1,11 @@
 """This module provides interactions with AWS"""
 
-import os
-import json
-import boto3
 import io
+import json
+import os
 import zipfile
+
+import boto3
 
 
 class AWS:
@@ -98,7 +99,6 @@ class S3(AWS):
         if object_name is None:
             object_name = file_name
         self.client.upload_file(file_name, bucket_name, object_name)
-        print(f"File {file_name} uploaded to bucket {bucket_name} as {object_name}.")
 
     def list_files(self, bucket_name: str) -> list:
         """
@@ -126,7 +126,7 @@ class S3(AWS):
 
         return file_names
 
-    def lambda_invoke(self, function_name: str, bucket_name: str) -> None:
+    def lambda_invoke(self, bucket_name: str, lambda_arn: str) -> None:
         """
         Description:
         ------------
@@ -143,7 +143,6 @@ class S3(AWS):
         """
         # 5. Add S3 event notification to invoke Lambda
 
-        lambda_arn = f"arn:aws:lambda:{self.region_name}:000000000000:function:{function_name}"
         self.client.put_bucket_notification_configuration(
             Bucket=bucket_name,
             NotificationConfiguration={
@@ -169,6 +168,40 @@ class CloudWatch(AWS):
 
         self.client.create_log_group(logGroupName=log_group_name)
         print(f"Log group {log_group_name} created successfully.")
+
+    def get_log_streams(self, log_group_name: str) -> list:
+        """
+        Description:
+        ------------
+        Get log streams for a specific CloudWatch log group.
+
+        Parameters:
+        -----------
+        :param log_group_name: Name of the log group to retrieve log streams from.
+
+        Returns:
+        --------
+        :return: List of log streams.
+        """
+        streams = self.client.describe_log_streams(
+            logGroupName=log_group_name, orderBy="LastEventTime", descending=True
+        )
+        return streams["logStreams"]
+
+    def get_log_events(self, log_group_name: str, log_stream_name: str) -> None:
+        """
+        Description:
+        ------------
+        Get log events from a CloudWatch log stream.
+
+        Parameters:
+        -----------
+        :param log_group_name: Name of the log group to retrieve logs from.
+        :param log_stream_name: Name of the log stream to retrieve logs from.
+        """
+        response = self.client.get_log_events(logGroupName=log_group_name, logStreamName=log_stream_name)
+        for event in response["events"]:
+            print(event["message"])
 
     def create_log_stream(self, log_group_name: str, log_stream_name: str) -> None:
         """
@@ -252,15 +285,16 @@ class Lambda(AWS):
             lambda_code = f.read()
 
         # Create a zip file in memory
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-            # Write the lambda function code to the zip file
-            zip_file.writestr("lambda_function.py", lambda_code)
+        with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+            zipinfo = zipfile.ZipInfo("lambda_function.py")
+            zipinfo.external_attr = 0o644 << 16  # Set file permissions
+            zip_file.writestr(zipinfo, lambda_code)
 
         # Seek to the beginning of the BytesIO buffer before returning
         zip_buffer.seek(0)
         return zip_buffer
 
-    def create_function(self, function_name: str, role_arn: str, lambda_path: str) -> None:
+    def create_function(self, function_name: str, role_arn: str, lambda_path: str) -> str:
         """
         Description:
         ------------
@@ -280,8 +314,17 @@ class Lambda(AWS):
             Role=role_arn,
             Handler="lambda_function.lambda_handler",
             Code={"ZipFile": zipped_code.read()},
+            Description="Logs S3 upload events",
+            Timeout=30,
+            MemorySize=128,
         )
+
+        lambda_arn = self.client.get_function(FunctionName=function_name)["Configuration"]["FunctionArn"]
+
+        print(lambda_arn)
         print(f"Lambda function {function_name} created successfully.")
+
+        return lambda_arn
 
     def add_permission(self, function_name: str, statement_id: str, bucket_name: str) -> None:
         """
@@ -301,6 +344,7 @@ class Lambda(AWS):
             Action="lambda:InvokeFunction",
             Principal="s3.amazonaws.com",
             SourceArn=f"arn:aws:s3:::{bucket_name}",
+            SourceAccount="000000000000",
         )
         print(f"Permission added to Lambda function {function_name} for bucket {bucket_name}.")
         print("AWS client initialized for service:", self.service_name)
@@ -321,17 +365,20 @@ class IAM(AWS):
         :param role_name: Name of the IAM role to create.
         :param trust_policy: Policy that grants an entity permission to assume the role.
         """
+        try:
+            role_response = self.client.create_role(
+                RoleName=role_name, AssumeRolePolicyDocument=json.dumps(trust_policy)
+            )
 
-        role_response = self.client.create_role(RoleName=role_name, AssumeRolePolicyDocument=json.dumps(trust_policy))
+            self.client.attach_role_policy(
+                RoleName=role_name, PolicyArn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+            )
 
-        self.client.attach_role_policy(
-            RoleName=role_name, PolicyArn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-        )
+            role_arn = role_response["Role"]["Arn"]
 
-        self.client.attach_role_policy(RoleName=role_name, PolicyArn="arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess")
-
-        role_arn = role_response["Role"]["Arn"]
-
-        print(f"IAM role {role_name} created successfully with ARN: {role_arn}")
+            print(f"IAM role {role_name} created successfully with ARN: {role_arn}")
+        except self.client.exceptions.EntityAlreadyExistsException:
+            print(f"IAM role {role_name} already exists.")
+            role_arn = self.client.get_role(RoleName=role_name)["Role"]["Arn"]
 
         return role_arn
