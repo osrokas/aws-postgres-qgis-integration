@@ -1,0 +1,16 @@
+version: '3.1'
+
+services: 
+
+  localstack:
+    image: localstack/localstack:latest
+    environment: 
+      - AWS_DEFAULT_REGION=us-east-1
+      - EDGE_PORT=4566
+      - SERVICES=s3,logs,lambda,iam
+      - LOCALSTACK_TMP_DIR=/tmp/localstack-custom
+    ports: 
+      - '4566-4583:4566-4583'
+    volumes: 
+      - "/tmp/localstack-custom:/tmp/localstack-custom"
+      - "/var/run/docker.sock:/var/run/docker.sock"
