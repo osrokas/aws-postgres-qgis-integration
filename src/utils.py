@@ -1,3 +1,5 @@
+"""Utility functions for the project."""
+
 import os
 
 
@@ -17,4 +19,5 @@ def create_random_string(length: int = 10) -> str:
     """
 
     random_string = os.urandom(length).hex()
+
     return random_string

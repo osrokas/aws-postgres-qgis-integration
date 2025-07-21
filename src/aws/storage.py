@@ -2,7 +2,6 @@
 
 import io
 import json
-import os
 import zipfile
 
 import boto3
@@ -49,6 +48,19 @@ class AWS:
 class S3(AWS):
     def __init__(self, service_name: str = "s3", **kwargs):
         super().__init__(service_name, **kwargs)
+        """
+        Description:
+        ------------
+        Initialize the S3 service client.
+
+        Parameters:
+        -----------
+        :param service_name: Name of the AWS service (default is 's3').
+        :param endpoint_url: URL of the AWS service endpoint (default is 'http://localhost:4566').
+        :param aws_access_key_id: AWS access key ID (default is 'test').
+        :param aws_secret_access_key: AWS secret access key (default is 'test').
+        :param region_name: AWS region name (default is 'us-east-1').
+        """
 
     def create_bucket(self, bucket_name: str) -> None:
         """
@@ -135,14 +147,9 @@ class S3(AWS):
         Parameters:
         -----------
         :param function_name: Name of the Lambda function to invoke.
-        :param payload: Payload to send to the Lambda function.
-
-        Returns:
-        --------
-        :return: Response from the Lambda function.
+        :param lambda_arn: ARN of the Lambda function to invoke.
         """
-        # 5. Add S3 event notification to invoke Lambda
-
+        # Set the notification configuration for the S3 bucket to trigger the Lambda function
         self.client.put_bucket_notification_configuration(
             Bucket=bucket_name,
             NotificationConfiguration={
@@ -168,6 +175,19 @@ class S3(AWS):
 class CloudWatch(AWS):
     def __init__(self, service_name="logs", **kwargs):
         super().__init__(service_name, **kwargs)
+        """
+        Description:
+        ------------
+        Initialize the CloudWatch service client.
+
+        Parameters:
+        -----------
+        :param service_name: Name of the AWS service (default is 'logs').
+        :param endpoint_url: URL of the AWS service endpoint (default is 'http://localhost:4566').
+        :param aws_access_key_id: AWS access key ID (default is 'test').
+        :param aws_secret_access_key: AWS secret access key (default is 'test').
+        :param region_name: AWS region name (default is 'us-east-1').
+        """
 
     def create_log_group(self, log_group_name: str) -> None:
         """
@@ -179,7 +199,7 @@ class CloudWatch(AWS):
         -----------
         :param log_group_name: Name of the log group to create.
         """
-
+        # Create a new log group
         self.client.create_log_group(logGroupName=log_group_name)
         print(f"Log group {log_group_name} created successfully.")
 
@@ -197,14 +217,16 @@ class CloudWatch(AWS):
         --------
         :return: List of log streams.
         """
-
+        # Get log streams for the specified log group
         streams = self.client.describe_log_streams(
             logGroupName=log_group_name, orderBy="LastEventTime", descending=True
         )
-        return streams["logStreams"]
+        log_streams = streams.get("logStreams", [])
+
+        return log_streams
 
     def get_log_events(
-        self, log_group_name: str, log_stream_name: str, latest: bool = False, events_count: int = 10
+        self, log_group_name: str, log_stream_name: str, earliest: bool = False, events_count: int = 10
     ) -> list:
         """
         Description:
@@ -215,12 +237,20 @@ class CloudWatch(AWS):
         -----------
         :param log_group_name: Name of the log group to retrieve logs from.
         :param log_stream_name: Name of the log stream to retrieve logs from.
+        :param earliest: If True, get the earliest logs. Default is False.
+        :param events_count: Number of log events to retrieve.
+
+        Returns:
+        --------
+        :return: List of log events containing GPX files.
         """
         # Multiply events_count by 4 to ensure we get enough events
         events_count *= 4
 
         # Get response from CloudWatch logs
-        response = self.client.get_log_events(logGroupName=log_group_name, startFromHead=latest, limit=events_count)
+        response = self.client.get_log_events(
+            logGroupName=log_group_name, logStreamName=log_stream_name, startFromHead=earliest, limit=events_count
+        )
 
         # Get events from the response
         events = response.get("events", [])
@@ -228,21 +258,33 @@ class CloudWatch(AWS):
             print(f"No log events found in stream {log_stream_name} of group {log_group_name}.")
             return []
 
+        # Create a placeholder for GPS files
         gps_files = []
 
+        # Iterate over the events and extract GPS files
         for event in events:
+            # Get the event message
             event_message = event.get("message", "")
+            # If the event message is empty continue to the next iteration
             if not event_message:
                 continue
+            # Check if the event message contains a GPX file
             if "route_framed_synced.gpx" in event_message:
-
+                # Parse the JSON data from the event message
                 json_data = json.loads(event_message)
+                # Get the records from the JSON data
                 records = json_data.get("Records", [])
+                # Iterate over the records and extract GPX files
                 for record in records:
+                    # Get the S3 bucket name
                     s3_bucket = record["s3"]["bucket"]["name"]
+                    # Get the S3 object key (file name)
                     s3_key = record["s3"]["object"]["key"]
+                    # Parse the S3 key to define correctly formatted file name
                     s3_key = s3_key.replace("%5C", "\\")
+                    # Get the event timestamp
                     event_timestamp = record["eventTime"]
+                    # Create a dictionary with GPX file information
                     gps_files.append(({"bucket": s3_bucket, "filename": s3_key, "event_timestamp": event_timestamp}))
 
         return gps_files
@@ -258,57 +300,29 @@ class CloudWatch(AWS):
         :param log_group_name: Name of the log group to create the stream in.
         :param log_stream_name: Name of the log stream to create.
         """
+        # Create a new log stream in the specified log group
         self.client.create_log_stream(logGroupName=log_group_name, logStreamName=log_stream_name)
         print(f"Log stream {log_stream_name} created in group {log_group_name}.")
-
-    def get_all_logs(self, log_group_name: str, log_stream_name: str) -> None:
-        """
-        Description:
-        ------------
-        Get all logs from a CloudWatch log group.
-
-        Parameters:
-        -----------
-        :param log_group_name: Name of the log group to retrieve logs from.
-
-        Returns:
-        --------
-        :return: List of log events.
-        """
-        response = self.client.get_log_events(logGroupName=log_group_name, logStreamName=log_stream_name)
-        print(response)
-        for stream in response["events"]:
-            stream_name = stream["logStreamName"]
-            print(f"--- Logs from: {stream_name} ---")
-            events = self.client.get_log_events(
-                logGroupName=log_group_name, logStreamName=stream_name, startFromHead=True
-            )
-            for e in events["events"]:
-                print(e["message"])
-        return None
-
-    def get_all_log_groups(self, log_group_name: str, log_stream_name: str):
-        """
-        Description:
-        ------------
-        Get all CloudWatch log groups.
-
-        Returns:
-        --------
-        :return: List of log group names.
-        """
-        response = self.client.get_log_events(log_group_name, log_stream_name, startFromHead=True)
-        for e in response:
-            print(e["message"])
 
 
 class Lambda(AWS):
     def __init__(self, service_name: str = "lambda", **kwargs):
         super().__init__(service_name, **kwargs)
+        """
+        Description:
+        ------------
+        Initialize the Lambda service client.
 
-        # Create zip in memory
+        Parameters:
+        -----------
+        :param service_name: Name of the AWS service (default is 'lambda').
+        :param endpoint_url: URL of the AWS service endpoint (default is 'http://localhost:4566').
+        :param aws_access_key_id: AWS access key ID (default is 'test').
+        :param aws_secret_access_key: AWS secret access key
+        :param region_name: AWS region name (default is 'us-east-1').
+        """
 
-    def __load_lambda_code(self, lambda_path: str) -> io.BytesIO:
+    def __load_lambda_code(self, lambda_path: str, py_function: str = "lambda_function.py") -> io.BytesIO:
         """
         Description:
         ------------
@@ -316,7 +330,8 @@ class Lambda(AWS):
 
         Parameters:
         -----------
-        :param lambda_code: The code for the Lambda function.
+        :param lambda_path: Path to the Lambda function code file.
+        :param py_function: Name of the Python function file to include in the zip (default is 'lambda_function.py').
 
         Returns:
         --------
@@ -325,17 +340,20 @@ class Lambda(AWS):
         # Create a BytesIO buffer to hold the zip file
         zip_buffer = io.BytesIO()
 
+        # Read the Lambda function code from the specified path
         with open(lambda_path, "r") as f:
             lambda_code = f.read()
 
         # Create a zip file in memory
         with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-            zipinfo = zipfile.ZipInfo("lambda_function.py")
+            # Write the Lambda function code to the zip file
+            zipinfo = zipfile.ZipInfo(py_function)
             zipinfo.external_attr = 0o644 << 16  # Set file permissions
             zip_file.writestr(zipinfo, lambda_code)
 
         # Seek to the beginning of the BytesIO buffer before returning
         zip_buffer.seek(0)
+
         return zip_buffer
 
     def create_function(self, function_name: str, role_arn: str, lambda_path: str) -> str:
@@ -348,10 +366,16 @@ class Lambda(AWS):
         -----------
         :param function_name: Name of the Lambda function to create.
         :param role_arn: ARN of the IAM role that Lambda assumes when it executes the function.
-        :param zipped_code: Zipped code for the Lambda function.
+        :param lambda_path: Path to the Lambda function code file.
+
+        Returns:
+        --------
+        :return: ARN of the created Lambda function.
         """
+        # Zip the Lambda function code into memory
         zipped_code = self.__load_lambda_code(lambda_path)
 
+        # Create the Lambda function using the zipped code
         self.client.create_function(
             FunctionName=function_name,
             Runtime="python3.10",
@@ -363,9 +387,8 @@ class Lambda(AWS):
             MemorySize=128,
         )
 
+        # Get the AWS resource
         lambda_arn = self.client.get_function(FunctionName=function_name)["Configuration"]["FunctionArn"]
-
-        print(lambda_arn)
         print(f"Lambda function {function_name} created successfully.")
 
         return lambda_arn
@@ -382,6 +405,7 @@ class Lambda(AWS):
         :param statement_id: Unique identifier for the statement.
         :param bucket_name: Name of the S3 bucket that can invoke the Lambda function.
         """
+        # Add permission for the S3 bucket to invoke the Lambda function
         self.client.add_permission(
             FunctionName=function_name,
             StatementId=statement_id,
@@ -408,21 +432,27 @@ class IAM(AWS):
         -----------
         :param role_name: Name of the IAM role to create.
         :param trust_policy: Policy that grants an entity permission to assume the role.
+
+        Returns:
+        --------
+        :return: ARN of the created IAM role.
         """
         try:
+            # Create the IAM role with the specified trust policy
             role_response = self.client.create_role(
                 RoleName=role_name, AssumeRolePolicyDocument=json.dumps(trust_policy)
             )
-
+            # Attach the AWSLambdaBasicExecutionRole policy to the role
             self.client.attach_role_policy(
                 RoleName=role_name, PolicyArn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
             )
-
+            # Get the ARN of the created role
             role_arn = role_response["Role"]["Arn"]
-
             print(f"IAM role {role_name} created successfully with ARN: {role_arn}")
+
         except self.client.exceptions.EntityAlreadyExistsException:
             print(f"IAM role {role_name} already exists.")
+            # If the role already exists, retrieve its ARN
             role_arn = self.client.get_role(RoleName=role_name)["Role"]["Arn"]
 
         return role_arn

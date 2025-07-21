@@ -1,6 +1,5 @@
 """Setup script for creating AWS services including S3 bucket, Lambda function, and IAM role."""
 
-from importlib.resources import files
 import os
 import time
 import argparse
@@ -100,16 +99,13 @@ def main(bucket_name: str, function_name: str, role_name: str) -> None:
 
     # Define the number of files to upload
     files_count = range(120)
-    print(files_count)
+
     # Simulate uploading multiple GPX files to S3
     for _ in tqdm(files_count, desc="Uploading GPX files to S3", total=len(files_count)):
-
         # Create a random string for the file name
         random_string = create_random_string(10)
-
         # Upload the GPX file to S3
         upload_gpx_path = os.path.join(random_string, f"route_framed_synced.gpx")
-
         # Upload the file to the S3 bucket
         s3_client.upload_file(gpx_path, bucket_name, upload_gpx_path)
 

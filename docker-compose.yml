@@ -2,6 +2,7 @@ version: '3.1'
 
 services: 
 
+  # Create a localstack container for AWS services
   localstack:
     container_name: aws-localstack
     image: localstack/localstack:latest
@@ -18,3 +19,17 @@ services:
     volumes: 
       - "/tmp/localstack-custom:/tmp/localstack-custom"
       - "/var/run/docker.sock:/var/run/docker.sock"
+  
+  # Create a PostGIS container for spatial data
+  postgis:
+    image: postgis/postgis:latest
+    container_name: trip_postgis
+    restart: always
+    environment:
+      POSTGRES_USER: tripuser
+      POSTGRES_PASSWORD: trippass
+      POSTGRES_DB: tripdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./db-init:/docker-entrypoint-initdb.d

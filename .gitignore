@@ -1,6 +1,7 @@
 .venv
 .env
 __pycache__
-data
+gpx_s3_data
 tasks.pdf
 .vscode
+db-init

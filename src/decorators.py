@@ -1,4 +1,4 @@
-"""Decorators for judumas project."""
+"""Decorators for project."""
 
 import os
 

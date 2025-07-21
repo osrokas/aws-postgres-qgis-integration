@@ -1,3 +1,5 @@
+"""This script downloads GPX files from AWS S3 based on CloudWatch logs."""
+
 import os
 import argparse
 
@@ -8,7 +10,9 @@ from src.aws.storage import CloudWatch, S3
 
 
 @load_env
-def main(log_group_name: str, log_stream_name: str, download_dir: str, events_count: int = 100) -> None:
+def main(
+    log_group_name: str, log_stream_name: str, download_dir: str, events_count: int = 100, earliest: bool = False
+) -> None:
     """
     Description
     ----------
@@ -18,6 +22,9 @@ def main(log_group_name: str, log_stream_name: str, download_dir: str, events_co
     ----------
     :param log_group_name: Name of the CloudWatch log group to create.
     :param log_stream_name: Name of the CloudWatch log stream to create.
+    :param download_dir: Directory to download GPX files to.
+    :param events_count: Number of events to retrieve from CloudWatch logs.
+    :param earliest: If True, retrieves the earliest log events; otherwise, retrieves the most recent log events.
     """
     # Define credentials and endpoint URL
     ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL")
@@ -51,11 +58,16 @@ def main(log_group_name: str, log_stream_name: str, download_dir: str, events_co
         return
 
     # Get the latest log stream
-    gpx_files = logs_client.get_log_events(log_group_name, log_stream_name, latest=True, events_count=events_count)
+    gpx_files = logs_client.get_log_events(
+        log_group_name, log_stream_name, earliest=earliest, events_count=events_count
+    )
 
     if not gpx_files:
         print("No GPX files found in the log stream.")
         return
+
+    # Create download directory if it does not exist
+    os.makedirs(download_dir, exist_ok=True)
 
     print("GPX Files in Log Stream:")
     for gpx_file in tqdm(gpx_files, desc="Processing GPX files", total=len(gpx_files)):
@@ -90,9 +102,31 @@ if __name__ == "__main__":
         type=str,
         help="Directory to download GPX files to.",
     )
+    parser.add_argument(
+        "--events_count",
+        type=int,
+        default=100,
+        help="Number of events to retrieve from CloudWatch logs.",
+    )
+    parser.add_argument(
+        "--earliest",
+        action="store_true",
+        help="Retrieve the earliest log events.",
+    )
+    # store false
+    parser.add_argument(
+        "--latest",
+        dest="earliest",
+        action="store_false",
+        help="Retrieve the latest log events.",
+    )
+    parser.set_defaults(earliest=False)
+
     args = parser.parse_args()
     main(
         log_group_name=args.log_group_name,
         log_stream_name=args.log_stream_name,
         download_dir=args.download_dir,
+        events_count=args.events_count,
+        earliest=args.earliest,
     )
