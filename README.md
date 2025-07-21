@@ -4,10 +4,10 @@
 
 This project uses LocalStack to simulate AWS services locally. Follow these steps to set up your environment
 
-## 1. Install LocalStack via Docker (for local development)
+## 1. Install LocalStack and Postgres via Docker (for local development)
 
 ```
-docker run --rm -it -p 4566:4566 -p 4571:4571 localstack/localstack
+docker compose up -d
 ```
 
 ## 2. Create virtual environment
