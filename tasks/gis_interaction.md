@@ -16,7 +16,7 @@
    ```
 4. Opening QGIS and adding a new PostGIS connection:
    - Go to **Layer** > **Data Source Manager** > **PostreSQL**.
-    ![alt text](images\image.png)
+    ![alt text](images/image.png)
     - Fill in the connection details:
       - **Name**: A name for your connection.
       - **Host**: The hostname of your PostgreSQL server.
@@ -24,17 +24,17 @@
       - **Database**: The name of your database.
       - **Username**: `qgis_user`.
       - **Password**: The password you set for `qgis_user`.
-      
-    ![alt text](images\image-1.png)
+
+    ![alt text](images/image-1.png)
 
 5. Add layer to the project:
-    ![alt text](images\image-3.png)
+    ![alt text](images/image-3.png)
 
 6. Test if edit is possible:
-   ![alt text](images\image-4.png)
+   ![alt text](images/image-4.png)
 
 7. In SQL client check if the data is updated:
    ```sql
    SELECT * FROM test_table;
    ```
-   ![alt text](images\image-5.png)
+   ![alt text](images/image-5.png)
