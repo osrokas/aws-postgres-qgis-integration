@@ -28,6 +28,7 @@
     ![alt text](images/image-1.png)
 
 5. Add layer to the project:
+
    ![alt text](images/image-3.png)
 
 6. Test if edit is possible:
