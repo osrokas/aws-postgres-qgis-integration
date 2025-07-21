@@ -35,3 +35,5 @@ source .venv/bin/activate
 ```
 pip install -r requirements.txt
 ```
+
+## 5. Tasks could be found in the tasks folder
